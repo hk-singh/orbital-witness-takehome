@@ -1,4 +1,10 @@
-import { ChevronLeft, ChevronRight, FileText, Loader2 } from "lucide-react";
+import {
+	ChevronLeft,
+	ChevronRight,
+	FileText,
+	Loader2,
+	Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Document as PDFDocument, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -21,6 +27,7 @@ interface DocumentViewerProps {
 	documents: Document[];
 	activeDocument: Document | null;
 	onSelectDocument: (id: string) => void;
+	onRemoveDocument: (id: string) => void;
 	jumpTarget: JumpTarget | null;
 }
 
@@ -28,8 +35,15 @@ export function DocumentViewer({
 	documents,
 	activeDocument,
 	onSelectDocument,
+	onRemoveDocument,
 	jumpTarget,
 }: DocumentViewerProps) {
+	const confirmRemove = (doc: Document) => {
+		if (window.confirm(`Remove "${doc.filename}" from this conversation?`)) {
+			onRemoveDocument(doc.id);
+		}
+	};
+
 	const [numPages, setNumPages] = useState<number>(0);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [pdfLoading, setPdfLoading] = useState(true);
@@ -118,7 +132,7 @@ export function DocumentViewer({
 			/>
 
 			{/* Header: active document + page count */}
-			<div className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
+			<div className="flex items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3">
 				<div className="min-w-0">
 					<p className="truncate text-sm font-medium text-neutral-800">
 						{activeDocument.filename}
@@ -131,6 +145,14 @@ export function DocumentViewer({
 							: ""}
 					</p>
 				</div>
+				<button
+					type="button"
+					onClick={() => confirmRemove(activeDocument)}
+					title="Remove this document from the conversation"
+					className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600"
+				>
+					<Trash2 className="h-4 w-4" />
+				</button>
 			</div>
 
 			{/* Document switcher (only when there's more than one) */}

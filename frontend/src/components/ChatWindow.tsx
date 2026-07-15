@@ -1,4 +1,4 @@
-import { FileText, Loader2 } from "lucide-react";
+import { FileText, Loader2, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { MAX_DOCUMENTS } from "../lib/constants";
 import type { Document, Message } from "../types";
@@ -16,7 +16,8 @@ interface ChatWindowProps {
 	uploading: boolean;
 	conversationId: string | null;
 	onSend: (content: string) => void;
-	onUpload: (file: File) => void;
+	onUpload: (files: File[]) => void;
+	onRemoveDocument: (id: string) => void;
 	onCitationClick: (documentId: string, page: number) => void;
 }
 
@@ -24,9 +25,11 @@ interface ChatWindowProps {
 function DocumentBar({
 	documents,
 	onOpen,
+	onRemove,
 }: {
 	documents: Document[];
 	onOpen: (documentId: string) => void;
+	onRemove: (documentId: string) => void;
 }) {
 	return (
 		<div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-100 bg-neutral-50/60 px-4 py-2">
@@ -34,16 +37,36 @@ function DocumentBar({
 				{documents.length} document{documents.length !== 1 ? "s" : ""}:
 			</span>
 			{documents.map((doc) => (
-				<button
+				<span
 					key={doc.id}
-					type="button"
-					onClick={() => onOpen(doc.id)}
-					title={`Open ${doc.filename}`}
-					className="flex max-w-[200px] items-center gap-1 rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-100"
+					className="group flex max-w-[220px] items-center gap-1 rounded-full border border-neutral-200 bg-white pr-1 text-xs text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-100"
 				>
-					<FileText className="h-3 w-3 flex-shrink-0 text-neutral-400" />
-					<span className="truncate">{doc.filename}</span>
-				</button>
+					<button
+						type="button"
+						onClick={() => onOpen(doc.id)}
+						title={`Open ${doc.filename}`}
+						className="flex min-w-0 items-center gap-1 py-1 pl-2.5"
+					>
+						<FileText className="h-3 w-3 flex-shrink-0 text-neutral-400" />
+						<span className="truncate">{doc.filename}</span>
+					</button>
+					<button
+						type="button"
+						onClick={() => {
+							if (
+								window.confirm(
+									`Remove "${doc.filename}" from this conversation?`,
+								)
+							) {
+								onRemove(doc.id);
+							}
+						}}
+						title={`Remove ${doc.filename}`}
+						className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+					>
+						<X className="h-3 w-3" />
+					</button>
+				</span>
 			))}
 		</div>
 	);
@@ -60,6 +83,7 @@ export function ChatWindow({
 	conversationId,
 	onSend,
 	onUpload,
+	onRemoveDocument,
 	onCitationClick,
 }: ChatWindowProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
@@ -106,6 +130,7 @@ export function ChatWindow({
 					<DocumentBar
 						documents={documents}
 						onOpen={(id) => onCitationClick(id, 1)}
+						onRemove={onRemoveDocument}
 					/>
 				)}
 				<div className="flex flex-1 items-center justify-center">
@@ -142,6 +167,7 @@ export function ChatWindow({
 				<DocumentBar
 					documents={documents}
 					onOpen={(id) => onCitationClick(id, 1)}
+					onRemove={onRemoveDocument}
 				/>
 			)}
 

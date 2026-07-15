@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface ChatInputProps {
 	onSend: (content: string) => void;
-	onUpload: (file: File) => void;
+	onUpload: (files: File[]) => void;
 	disabled: boolean;
 	uploading: boolean;
 	documentCount: number;
@@ -54,11 +54,11 @@ export function ChatInput({
 
 	const handleFileChange = useCallback(
 		(e: React.ChangeEvent<HTMLInputElement>) => {
-			const file = e.target.files?.[0];
-			if (file) {
-				onUpload(file);
+			const files = Array.from(e.target.files ?? []);
+			if (files.length > 0) {
+				onUpload(files);
 			}
-			// Reset the input so the same file can be selected again
+			// Reset the input so the same file(s) can be selected again
 			if (fileInputRef.current) {
 				fileInputRef.current.value = "";
 			}
@@ -101,6 +101,7 @@ export function ChatInput({
 					ref={fileInputRef}
 					type="file"
 					accept=".pdf"
+					multiple
 					className="hidden"
 					onChange={handleFileChange}
 				/>

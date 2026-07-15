@@ -15,10 +15,11 @@ plain-language engineering deep-dive is in **[`FORHARSH.md`](./FORHARSH.md)**.
 ## What's new in this submission
 
 **Part 2.1 — Multi-document conversations.** A conversation can now hold many
-documents (not just one). You can upload additional PDFs at any time, see every
-document loaded in the conversation, switch between them in the reader panel, and
-ask questions that draw on any or all of them at once. A configurable cap
-(default **10 documents/conversation**, PDF-only, 25 MB each) keeps things bounded.
+documents (not just one). You can upload **several PDFs at once** (multi-select
+or drag-drop), see every document loaded in the conversation, switch between them
+in the reader panel, **remove** any of them, and ask questions that draw on any
+or all of them at once. A configurable cap (default **10 documents/conversation**,
+PDF-only, 25 MB each) keeps things bounded.
 
 **Part 2.2 — Grounded citations + a confidence signal.** This targets the
 loudest, highest-value theme in the beta data (16% of answers cited nothing, and

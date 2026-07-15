@@ -12,6 +12,7 @@ from starlette.responses import FileResponse
 from takehome.db.session import get_session
 from takehome.services.conversation import get_conversation
 from takehome.services.document import (
+    delete_document,
     get_document,
     get_documents_for_conversation,
     upload_document,
@@ -106,6 +107,17 @@ async def upload_document_endpoint(
         page_count=document.page_count,
         uploaded_at=document.uploaded_at,
     )
+
+
+@router.delete("/api/documents/{document_id}", status_code=204)
+async def delete_document_endpoint(
+    document_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Remove a document from its conversation (and delete its file)."""
+    deleted = await delete_document(session, document_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found")
 
 
 @router.get("/api/documents/{document_id}/content")

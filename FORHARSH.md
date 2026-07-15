@@ -171,6 +171,22 @@ be computed once the full answer exists, so they arrive in the final SSE
 columns, migration `002`). The UI shows the streaming text live, then swaps in
 the verified, citation-linked version.
 
+### Decision 7 — Round out the multi-doc UX (upload many, remove one)
+Two gaps surfaced during smoke testing: you could only pick one file at a time,
+and there was no way to remove a document. Both got fixed:
+- **Multi-upload**: the file inputs are `multiple`, drag-drop accepts several
+  PDFs, and the hook uploads them **sequentially** (not in parallel) so the
+  server-side document cap is checked race-free and the first failure — e.g.
+  hitting the 10-doc limit mid-batch — surfaces cleanly.
+- **Remove**: a new `DELETE /api/documents/{id}` endpoint deletes the row *and*
+  the file on disk (best-effort — a missing file doesn't block the delete). In
+  the UI you can remove a document from the chat's document strip (× per chip) or
+  the reader's header (🗑), each behind a confirm. One sharp edge to remember: a
+  message's stored citations reference a `document_id`, so citations on *old*
+  answers that point at a since-deleted document will 404 if clicked — acceptable
+  for now (it's history), but at scale you'd soft-delete or tombstone instead of
+  hard-deleting, so the audit trail stays intact.
+
 ---
 
 ## 5. How a single question actually flows (the end-to-end trace)

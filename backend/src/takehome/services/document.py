@@ -122,3 +122,21 @@ async def get_documents_for_conversation(
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def delete_document(session: AsyncSession, document_id: str) -> bool:
+    """Delete a document and its file on disk. Returns True if it existed."""
+    document = await get_document(session, document_id)
+    if document is None:
+        return False
+
+    # Best-effort removal of the file on disk; a missing file shouldn't block
+    # deleting the record.
+    try:
+        os.remove(document.file_path)
+    except OSError:
+        logger.warning("Could not remove document file", path=document.file_path)
+
+    await session.delete(document)
+    await session.commit()
+    return True

@@ -49,27 +49,51 @@ export function useDocuments(conversationId: string | null) {
 		refresh();
 	}, [refresh]);
 
+	// Upload one or more files sequentially. Sequential (not parallel) keeps the
+	// server-side document-cap check race-free and surfaces the first failure
+	// (e.g. hitting the limit) clearly.
 	const upload = useCallback(
-		async (file: File) => {
-			if (!conversationId) return null;
+		async (files: File[]) => {
+			if (!conversationId || files.length === 0) return 0;
+			setUploading(true);
+			setError(null);
+			let uploaded = 0;
 			try {
-				setUploading(true);
-				setError(null);
-				const doc = await api.uploadDocument(conversationId, file);
-				setDocuments((prev) => [...prev, doc]);
-				setActiveId(doc.id); // show the freshly uploaded document
-				return doc;
-			} catch (err) {
-				setError(
-					err instanceof Error ? err.message : "Failed to upload document",
-				);
-				return null;
+				for (const file of files) {
+					try {
+						const doc = await api.uploadDocument(conversationId, file);
+						setDocuments((prev) => [...prev, doc]);
+						setActiveId(doc.id); // show the most recently uploaded document
+						uploaded += 1;
+					} catch (err) {
+						setError(
+							err instanceof Error ? err.message : "Failed to upload document",
+						);
+						break; // stop the batch on the first error (e.g. limit reached)
+					}
+				}
 			} finally {
 				setUploading(false);
 			}
+			return uploaded;
 		},
 		[conversationId],
 	);
+
+	const removeDocument = useCallback(async (id: string) => {
+		try {
+			setError(null);
+			await api.deleteDocument(id);
+			setDocuments((prev) => prev.filter((d) => d.id !== id));
+			// If we removed the active document, fall back to the first remaining
+			// one (the derived activeDocument handles the empty case).
+			setActiveId((prev) => (prev === id ? null : prev));
+		} catch (err) {
+			setError(
+				err instanceof Error ? err.message : "Failed to remove document",
+			);
+		}
+	}, []);
 
 	const selectDocument = useCallback((id: string) => {
 		setActiveId(id);
@@ -94,6 +118,7 @@ export function useDocuments(conversationId: string | null) {
 		error,
 		refresh,
 		upload,
+		removeDocument,
 		selectDocument,
 		viewDocumentAt,
 	};

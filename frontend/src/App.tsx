@@ -33,6 +33,7 @@ export default function App() {
 		jumpTarget,
 		uploading,
 		upload,
+		removeDocument,
 		selectDocument,
 		viewDocumentAt,
 	} = useDocuments(selectedId);
@@ -46,9 +47,9 @@ export default function App() {
 	);
 
 	const handleUpload = useCallback(
-		async (file: File) => {
-			const doc = await upload(file);
-			if (doc) {
+		async (files: File[]) => {
+			const uploaded = await upload(files);
+			if (uploaded > 0) {
 				refreshConversations();
 			}
 		},
@@ -82,6 +83,7 @@ export default function App() {
 					conversationId={selectedId}
 					onSend={handleSend}
 					onUpload={handleUpload}
+					onRemoveDocument={removeDocument}
 					onCitationClick={viewDocumentAt}
 				/>
 
@@ -89,6 +91,7 @@ export default function App() {
 					documents={documents}
 					activeDocument={activeDocument}
 					onSelectDocument={selectDocument}
+					onRemoveDocument={removeDocument}
 					jumpTarget={jumpTarget}
 				/>
 			</div>
