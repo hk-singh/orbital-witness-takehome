@@ -4,7 +4,7 @@ import { ChatWindow } from "./components/ChatWindow";
 import { DocumentViewer } from "./components/DocumentViewer";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useConversations } from "./hooks/use-conversations";
-import { useDocument } from "./hooks/use-document";
+import { useDocuments } from "./hooks/use-documents";
 import { useMessages } from "./hooks/use-messages";
 
 export default function App() {
@@ -28,10 +28,14 @@ export default function App() {
 	} = useMessages(selectedId);
 
 	const {
-		document,
+		documents,
+		activeDocument,
+		jumpTarget,
+		uploading,
 		upload,
-		refresh: refreshDocument,
-	} = useDocument(selectedId);
+		selectDocument,
+		viewDocumentAt,
+	} = useDocuments(selectedId);
 
 	const handleSend = useCallback(
 		async (content: string) => {
@@ -45,11 +49,10 @@ export default function App() {
 		async (file: File) => {
 			const doc = await upload(file);
 			if (doc) {
-				refreshDocument();
 				refreshConversations();
 			}
 		},
-		[upload, refreshDocument, refreshConversations],
+		[upload, refreshConversations],
 	);
 
 	const handleCreate = useCallback(async () => {
@@ -74,13 +77,20 @@ export default function App() {
 					error={messagesError}
 					streaming={streaming}
 					streamingContent={streamingContent}
-					hasDocument={!!document}
+					documents={documents}
+					uploading={uploading}
 					conversationId={selectedId}
 					onSend={handleSend}
 					onUpload={handleUpload}
+					onCitationClick={viewDocumentAt}
 				/>
 
-				<DocumentViewer document={document} />
+				<DocumentViewer
+					documents={documents}
+					activeDocument={activeDocument}
+					onSelectDocument={selectDocument}
+					jumpTarget={jumpTarget}
+				/>
 			</div>
 		</TooltipProvider>
 	);

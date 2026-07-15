@@ -69,6 +69,13 @@ export async function sendMessage(
 	return res;
 }
 
+export async function fetchDocuments(
+	conversationId: string,
+): Promise<Document[]> {
+	const res = await fetch(`${BASE}/conversations/${conversationId}/documents`);
+	return handleResponse<Document[]>(res);
+}
+
 export async function uploadDocument(
 	conversationId: string,
 	file: File,

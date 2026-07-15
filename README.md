@@ -1,10 +1,50 @@
 # Orbital — Product Engineering Take-Home
 
-Welcome! This is a take-home assessment for a Product Engineering role at Orbital.
+A document Q&A tool for commercial real estate lawyers: upload legal documents
+(leases, title reports, environmental assessments), ask questions, and get
+answers **grounded in the document content — with verifiable citations**.
 
-You've been given a working baseline application: a document Q&A tool for commercial real estate lawyers. Users upload legal documents (leases, title reports, environmental assessments) and ask questions about them. The AI assistant answers questions grounded in the document content.
+This repository extends the provided baseline. Below is a summary of what was
+built; the full product rationale is in **[`DECISIONS.md`](./DECISIONS.md)** and a
+plain-language engineering deep-dive is in **[`FORHARSH.md`](./FORHARSH.md)**.
 
-The app works, but it has limitations. Your job is to extend it.
+## 🎥 Loom walkthrough
+
+> _Loom link: **TODO — paste 2–3 min walkthrough here before submitting**_
+
+## What's new in this submission
+
+**Part 2.1 — Multi-document conversations.** A conversation can now hold many
+documents (not just one). You can upload additional PDFs at any time, see every
+document loaded in the conversation, switch between them in the reader panel, and
+ask questions that draw on any or all of them at once. A configurable cap
+(default **10 documents/conversation**, PDF-only, 25 MB each) keeps things bounded.
+
+**Part 2.2 — Grounded citations + a confidence signal.** This targets the
+loudest, highest-value theme in the beta data (16% of answers cited nothing, and
+👎 conversations had ~2× the zero-source rate of 👍 ones). Answers are now
+produced with a small RAG pipeline:
+
+- Documents are chunked (page- and clause-aware) and the most relevant passages
+  across **all** documents are retrieved with **BM25** for each question.
+- The model may answer **only** from those passages and must cite them inline
+  with `[Sn]` markers.
+- Every citation is **verified** against the passages actually provided —
+  fabricated citations are stripped, not shown.
+- Each answer carries a **confidence badge** (grounded / partially supported /
+  unverified) and **clickable citations** that jump the reader to the exact
+  document and page.
+
+See `DECISIONS.md` for the data analysis and the "how it works under the hood"
+walkthrough, and `FORHARSH.md` for the architecture, decisions log, and a
+scaling roadmap.
+
+## Tests & checks
+
+```
+just check                 # ruff + pyright (backend) and biome + tsc (frontend)
+pytest backend/tests       # unit tests for chunking, BM25, citation verification, confidence
+```
 
 ---
 

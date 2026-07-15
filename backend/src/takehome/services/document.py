@@ -21,14 +21,20 @@ async def upload_document(
     """Upload and process a PDF document for a conversation.
 
     Validates the file is a PDF, saves it to disk, extracts text using PyMuPDF,
-    and stores metadata in the database.
+    and stores metadata in the database. A conversation may hold many documents;
+    each new upload is added alongside the existing ones.
 
-    Raises ValueError if the conversation already has a document or the file is not a PDF.
+    Raises ValueError if the file is not a PDF, is too large, or the conversation
+    is already at its document limit.
     """
-    # Check if conversation already has a document
-    existing = await get_document_for_conversation(session, conversation_id)
-    if existing is not None:
-        raise ValueError("Conversation already has a document. Only one document per conversation is allowed.")
+    # Enforce the per-conversation document cap.
+    existing = await get_documents_for_conversation(session, conversation_id)
+    if len(existing) >= settings.max_documents_per_conversation:
+        raise ValueError(
+            f"This conversation already has the maximum of "
+            f"{settings.max_documents_per_conversation} documents. "
+            "Remove one before adding another."
+        )
 
     # Validate file type
     if file.content_type not in ("application/pdf", "application/x-pdf"):
@@ -105,10 +111,14 @@ async def get_document(session: AsyncSession, document_id: str) -> Document | No
     return result.scalar_one_or_none()
 
 
-async def get_document_for_conversation(
+async def get_documents_for_conversation(
     session: AsyncSession, conversation_id: str
-) -> Document | None:
-    """Get the document for a conversation, if one exists."""
-    stmt = select(Document).where(Document.conversation_id == conversation_id)
+) -> list[Document]:
+    """Get all documents for a conversation, oldest first (upload order)."""
+    stmt = (
+        select(Document)
+        .where(Document.conversation_id == conversation_id)
+        .order_by(Document.uploaded_at.asc())
+    )
     result = await session.execute(stmt)
-    return result.scalar_one_or_none()
+    return list(result.scalars().all())

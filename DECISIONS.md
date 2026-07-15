@@ -185,38 +185,50 @@ insurance). And **citation** needs granularity — "page 14, clause 12.3" is a
 useful citation; "somewhere in this 50-page PDF" is not. The metadata is what
 later makes a citation *clickable* — it's the address we jump the viewer to.
 
-### Stage 2 — Embedding (turning meaning into coordinates)
+### Stage 2 — Retrieval with BM25 (finding the right passages for *this* question)
 
-For each chunk we compute an **embedding**: a list of a few hundred numbers (a
-vector) that encodes the passage's *meaning*. The key property is that passages
-about similar things land near each other in this high-dimensional space, even
-if they use different words. "Break clause," "right to terminate early," and
-"tenant's option to determine the lease" all cluster together, even though they
-share almost no vocabulary.
+This is the deliberate engineering trade-off of the whole feature, so it's worth
+being precise about. **What we actually built is lexical retrieval using BM25**,
+not vector embeddings. When the user asks a question, we tokenise it, then score
+every chunk (across *all* documents in the conversation) by BM25 and take the
+**top-k** (k=6). That "across all documents" is exactly how multi-document Q&A
+works: retrieval doesn't care which file a chunk came from, so a single question
+naturally pulls the most relevant clause from the lease *and* the matching
+clause from the purchase agreement.
 
-Think of it as a **library where books are shelved by meaning instead of by
-title** — walk to the "early termination" corner and everything relevant is
-within arm's reach, whatever it's actually called. We store these vectors
-alongside the chunks so we can search them.
+**What BM25 is, plainly:** it scores a passage by how many of the query's words
+it contains, but with two pieces of judgement baked in. Rare words count for
+more than common ones (asking about "indemnity" should reward the one clause
+that says "indemnity", not every page that says "the"), and it dampens two kinds
+of cheating — repeating a word many times, and a passage simply being long. It's
+the classic search-engine ranking function, and it's implemented from scratch in
+`retrieval.py` (~40 lines, no dependencies).
 
-### Stage 3 — Retrieval (finding the right passages for *this* question)
+**Why lexical, not embeddings?** Three reasons, in order of importance:
+1. **Legal questions are token-heavy.** Lawyers ask about "clause 12.3",
+   "Schedule 4", "the break option", named parties. BM25 nails exact-token
+   matching; naive semantic search can actually *rank the wrong clause higher*
+   because it's "about" the same topic. Our tokenizer even keeps "12.3" intact
+   as one token instead of shredding it into "12" and "3".
+2. **No new moving parts.** Embeddings need an embedding API (Anthropic doesn't
+   offer one — you'd add Voyage/OpenAI and another key) or a local model
+   (hundreds of MB of PyTorch), plus a vector store. BM25 runs in-process,
+   offline, deterministically. For a beta at this scale it's the right amount of
+   machine, and it means the feature runs anywhere the app runs.
+3. **It makes the trust story testable.** Because it's deterministic, the whole
+   retrieval + grounding path is covered by fast unit tests with no API calls —
+   which is how the citation/confidence logic is verified in this repo.
 
-When the user asks a question, we embed the *question* the same way, then find
-the chunks whose vectors are closest to it (cosine similarity). We take the
-**top-k** (say, 6–8) across *all* documents in the conversation. That "across
-all documents" is exactly how multi-document Q&A works: retrieval doesn't care
-which file a chunk came from, so a single question naturally pulls the most
-relevant clause from the lease *and* the matching clause from the purchase
-agreement.
+> **The honest limitation (and the upgrade path):** pure lexical search misses
+> pure-synonym questions — ask "can the tenant get out of the lease early?" when
+> the document only ever says "right to determine", and BM25 sees no shared
+> words. The production answer is **hybrid retrieval**: run BM25 *and* a semantic
+> embedding search, then fuse the rankings so you get exact-token precision *and*
+> synonym recall. That's the headline item in "what I'd do next" — embeddings
+> aren't abandoned, they're the second half of a better retriever. This is the
+> single most important thing to add as the corpus and user base grow.
 
-> **The honest tradeoff (why I'd add hybrid search later):** pure semantic
-> search is great at "what does this *mean*" but can miss exact tokens —
-> ask for "clause 12.3" and vector search might rank a semantically-similar
-> clause above the literal one. Real legal search wants **both** a keyword pass
-> (BM25/full-text) and a semantic pass, then fuses the rankings. That's the
-> "hybrid retrieval" item in the next-steps list.
-
-### Stage 4 — Generation with a grounding contract
+### Stage 3 — Generation with a grounding contract
 
 Now we prompt the model, but the prompt is different from the baseline. Instead
 of "here's a document, please cite," we give it *only the retrieved chunks*,
@@ -235,54 +247,64 @@ The model answers and attaches citations like `[S1]`. Because its *entire
 world* is those passages, it has nothing else to hallucinate from — the
 architecture, not a plea, is what keeps it honest.
 
-### Stage 5 — Verification (the part that earns the "grounded" label)
+### Stage 4 — Verification (the part that earns the "grounded" label)
 
 This is the step that separates real grounding from "please cite," and it's the
-direct answer to *"cited a clause that doesn't exist."* For every citation the
-model emits, we **check the quoted span against the source chunk's actual
-text** — an exact/fuzzy string match back into the passage we retrieved.
+direct answer to *"cited a clause that doesn't exist."* After the model finishes,
+we take every `[Sn]` marker it emitted and **check it against the sources we
+actually provided** (`resolve_citations` in `grounding.py`):
 
-- Quote found in its cited source → ✅ it's a real, verifiable citation. We
-  resolve `[S1]` to its `{document, page, offsets}` and render it as a
-  clickable chip.
-- Quote *not* found → 🚩 the model invented or mangled it. We don't present it
-  as fact; we strip or flag it and it counts against confidence.
+- Marker maps to a real source we sent (e.g. `[S1]` when S1…S6 were provided) →
+  ✅ a verified citation. We resolve it to its `{document, page, clause}` and
+  render it as a clickable chip that jumps the reader to that exact page.
+- Marker maps to nothing (e.g. the model writes `[S9]` when only S1…S6 exist) →
+  🚩 a **fabricated citation**. We strip it from the answer so the user never
+  sees a citation they can't click through to, log it, and count it against the
+  answer's confidence.
 
-The model is no longer the last line of defence — deterministic code is.
+Two things make this trustworthy rather than cosmetic. First, the model's
+*entire world* is the retrieved passages, so a claim can't be grounded in
+outside knowledge — it has nothing else to draw on. Second, the marker check is
+deterministic code, not another model: the LLM is no longer the last line of
+defence for its own honesty. (The natural next increment, noted below, is to go
+from "the marker points at a real source" to "the model's quoted words actually
+appear in that source" — a span-level string match. The current check already
+catches the failure mode users reported; span-matching tightens it further.)
 
-### Stage 6 — The confidence signal
+### Stage 5 — The confidence signal
 
-The badge users said they'd "pay double" for falls out naturally from Stage 5.
-Confidence is a function of **grounding coverage**: what fraction of the
-answer's claims survived verification, combined with retrieval scores (were the
-retrieved chunks actually a strong match, or the best of a bad bunch?) and the
-model's own abstention.
+The badge users said they'd "pay double" for falls out of Stage 4. Confidence is
+a simple, explainable function of grounding coverage and retrieval strength
+(`compute_confidence` in `grounding.py`) — deliberately a transparent rule, not
+a black-box score:
 
-- Most claims verified, strong retrieval → **Well-grounded** (green).
-- Some claims unverifiable, or weak retrieval → **Partially supported** (amber).
-- Nothing relevant retrieved / model abstains → **Not found in the documents**
-  (grey) — and this is a *feature*: an honest "it's not in here" is exactly what
-  the partners asked for, and it's what turns "confidently wrong" into "usefully
-  cautious."
+- **Grounded** (green): at least two distinct verified citations, a strong
+  retrieval match, and no fabricated markers.
+- **Partially supported** (amber): some verified citations, but thin (only one),
+  a weak retrieval match, or some fabrication mixed in — verify before relying.
+- **Unverified** (grey): no documents, nothing retrieved, or no citation
+  survived verification. This is treated as a *feature*, not a failure: an
+  honest "the documents don't cover this" is exactly what the partners asked
+  for, and it's what turns "confidently wrong" into "usefully cautious."
 
 ## How the pieces connect
 
 ```
-Upload ──▶ Extract (PyMuPDF) ──▶ Chunk (+page/offset metadata) ──▶ Embed ──▶ store
-                                                                              │
-User question ──▶ Embed ──▶ Retrieve top-k across ALL docs  ◀─────────────────┘
+Upload ──▶ Extract (PyMuPDF) ──▶ Chunk (+page/clause metadata) ──▶ store text
+                                                                        │
+User question ──▶ Chunk all docs ──▶ BM25 rank ──▶ top-k across ALL docs┘
                                         │
                                         ▼
-                    Generate (answer only from retrieved chunks, cite IDs)
+                    Generate (answer only from retrieved sources, cite [Sn])
                                         │
                                         ▼
-                    Verify each quote against its source text
+                    Verify each [Sn] marker against the provided sources
                                         │
                         ┌───────────────┴───────────────┐
                         ▼                                ▼
              Clickable citation chips            Confidence badge
-             (jump the viewer to the           (from grounding coverage)
-              cited document + page)
+             (jump the viewer to the           (from grounding coverage
+              cited document + page)             + retrieval strength)
 ```
 
 The through-line: **retrieval** makes multi-document Q&A possible and keeps the

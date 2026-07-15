@@ -1,8 +1,9 @@
 import { ChevronLeft, ChevronRight, FileText, Loader2 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Document as PDFDocument, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import type { JumpTarget } from "../hooks/use-documents";
 import { getDocumentUrl } from "../lib/api";
 import type { Document } from "../types";
 import { Button } from "./ui/button";
@@ -14,13 +15,21 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 const MIN_WIDTH = 280;
 const MAX_WIDTH = 700;
-const DEFAULT_WIDTH = 400;
+const DEFAULT_WIDTH = 420;
 
 interface DocumentViewerProps {
-	document: Document | null;
+	documents: Document[];
+	activeDocument: Document | null;
+	onSelectDocument: (id: string) => void;
+	jumpTarget: JumpTarget | null;
 }
 
-export function DocumentViewer({ document }: DocumentViewerProps) {
+export function DocumentViewer({
+	documents,
+	activeDocument,
+	onSelectDocument,
+	jumpTarget,
+}: DocumentViewerProps) {
 	const [numPages, setNumPages] = useState<number>(0);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [pdfLoading, setPdfLoading] = useState(true);
@@ -28,6 +37,26 @@ export function DocumentViewer({ document }: DocumentViewerProps) {
 	const [width, setWidth] = useState(DEFAULT_WIDTH);
 	const [dragging, setDragging] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
+
+	const activeId = activeDocument?.id ?? null;
+
+	// Reset page/loading state whenever the shown document changes.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset is keyed on the active document id
+	useEffect(() => {
+		setCurrentPage(1);
+		setNumPages(0);
+		setPdfLoading(true);
+		setPdfError(null);
+	}, [activeId]);
+
+	// Respond to a citation click: jump to the requested page of the requested
+	// document (the parent has already made it the active document).
+	useEffect(() => {
+		if (!jumpTarget || !activeId) return;
+		if (jumpTarget.documentId === activeId) {
+			setCurrentPage(jumpTarget.page);
+		}
+	}, [jumpTarget, activeId]);
 
 	const handleMouseDown = useCallback(
 		(e: React.MouseEvent) => {
@@ -60,19 +89,19 @@ export function DocumentViewer({ document }: DocumentViewerProps) {
 
 	const pdfPageWidth = width - 48; // account for px-4 padding on each side
 
-	if (!document) {
+	if (!activeDocument) {
 		return (
 			<div
 				style={{ width }}
 				className="flex h-full flex-shrink-0 flex-col items-center justify-center border-l border-neutral-200 bg-neutral-50"
 			>
 				<FileText className="mb-3 h-10 w-10 text-neutral-300" />
-				<p className="text-sm text-neutral-400">No document uploaded</p>
+				<p className="text-sm text-neutral-400">No documents uploaded</p>
 			</div>
 		);
 	}
 
-	const pdfUrl = getDocumentUrl(document.id);
+	const pdfUrl = getDocumentUrl(activeDocument.id);
 
 	return (
 		<div
@@ -88,17 +117,46 @@ export function DocumentViewer({ document }: DocumentViewerProps) {
 				onMouseDown={handleMouseDown}
 			/>
 
-			{/* Header */}
+			{/* Header: active document + page count */}
 			<div className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
 				<div className="min-w-0">
 					<p className="truncate text-sm font-medium text-neutral-800">
-						{document.filename}
+						{activeDocument.filename}
 					</p>
 					<p className="text-xs text-neutral-400">
-						{document.page_count} page{document.page_count !== 1 ? "s" : ""}
+						{activeDocument.page_count} page
+						{activeDocument.page_count !== 1 ? "s" : ""}
+						{documents.length > 1
+							? ` · ${documents.length} documents in this chat`
+							: ""}
 					</p>
 				</div>
 			</div>
+
+			{/* Document switcher (only when there's more than one) */}
+			{documents.length > 1 && (
+				<div className="flex gap-1.5 overflow-x-auto border-b border-neutral-100 px-3 py-2">
+					{documents.map((doc) => {
+						const active = doc.id === activeId;
+						return (
+							<button
+								key={doc.id}
+								type="button"
+								onClick={() => onSelectDocument(doc.id)}
+								title={doc.filename}
+								className={`flex max-w-[160px] flex-shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+									active
+										? "border-neutral-800 bg-neutral-900 text-white"
+										: "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50"
+								}`}
+							>
+								<FileText className="h-3 w-3 flex-shrink-0" />
+								<span className="truncate">{doc.filename}</span>
+							</button>
+						);
+					})}
+				</div>
+			)}
 
 			{/* PDF content */}
 			<div className="flex-1 overflow-y-auto p-4">
@@ -109,11 +167,14 @@ export function DocumentViewer({ document }: DocumentViewerProps) {
 				)}
 
 				<PDFDocument
+					key={activeDocument.id}
 					file={pdfUrl}
 					onLoadSuccess={({ numPages: pages }) => {
 						setNumPages(pages);
 						setPdfLoading(false);
 						setPdfError(null);
+						// Clamp a citation jump that lands past the end of the doc.
+						setCurrentPage((p) => Math.min(Math.max(1, p), pages));
 					}}
 					onLoadError={(error) => {
 						setPdfError(`Failed to load PDF: ${error.message}`);

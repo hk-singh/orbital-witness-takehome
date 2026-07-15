@@ -9,7 +9,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://orbital:orbital@db:5432/orbital_takehome"
     anthropic_api_key: str = ""
     upload_dir: str = "uploads"
-    max_upload_size: int = 25 * 1024 * 1024  # 25MB
+    max_upload_size: int = 25 * 1024 * 1024  # 25MB per file
+    # Cap documents per conversation so retrieval stays fast and context bounded.
+    max_documents_per_conversation: int = 10
 
     model_config = {"env_file": ".env"}
 
