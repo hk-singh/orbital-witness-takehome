@@ -5,8 +5,8 @@ A document Q&A tool for commercial real estate lawyers: upload legal documents
 answers **grounded in the document content — with verifiable citations**.
 
 This repository extends the provided baseline. Below is a summary of what was
-built; the full product rationale is in **[`DECISIONS.md`](./DECISIONS.md)** and a
-plain-language engineering deep-dive is in **[`FORHARSH.md`](./FORHARSH.md)**.
+built; the full product rationale, a how-it-works walkthrough, and the
+architecture I'd build with more time are in **[`DECISIONS.md`](./DECISIONS.md)**.
 
 ## 🎥 Loom walkthrough
 
@@ -36,9 +36,8 @@ produced with a small RAG pipeline:
   unverified) and **clickable citations** that jump the reader to the exact
   document and page.
 
-See `DECISIONS.md` for the data analysis and the "how it works under the hood"
-walkthrough, and `FORHARSH.md` for the architecture, decisions log, and a
-scaling roadmap.
+See `DECISIONS.md` for the data analysis, the "how it works under the hood"
+walkthrough, and the scaling architecture I'd build with more time.
 
 ## Tests & checks
 

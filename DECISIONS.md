@@ -90,19 +90,68 @@ whole product.
 
 ## 3. What I'd do next with more time
 
-- **Hybrid retrieval.** Legal text mixes semantic questions ("what are the
-  break rights?") with exact-token lookups ("clause 12.3"). Pure vector search
-  is weak at the latter. I'd add a lexical/BM25 pass and fuse the two (see the
-  deep-dive below for why).
-- **Span-level highlighting in the viewer**, not just page-level jumps — draw
-  the actual bounding box of the cited text on the PDF using PyMuPDF's
-  coordinate data.
-- **Cross-document contradiction detection.** Multiple partners want to compare
-  what two documents say about the same topic; a grounded system can surface
-  *"the lease says X but the purchase agreement says Y."*
-- **Feedback loop.** We already log `thumbs_up/down`; I'd tie that to retrieval
-  quality metrics so the confidence signal is calibrated against real outcomes,
-  not just heuristics.
+Quick wins first, then the bigger architectural bet.
+
+- **Hybrid retrieval.** We already have the lexical (BM25) half. The next step is
+  to add a **semantic embedding** pass and **fuse** the two rankings (Reciprocal
+  Rank Fusion), so we get BM25's exact-token precision *and* recall on synonym
+  questions ("can the tenant exit early?" ↔ "right to determine"). A small
+  **cross-encoder re-ranker** over the top ~30 candidates is the final polish.
+- **Span-level verification + highlighting.** Upgrade citation checking from "the
+  marker points at a real source" to "the model's quoted words appear in that
+  source," and draw the actual bounding box on the PDF using PyMuPDF's coordinates
+  — so a citation highlights the exact sentence, not just the page.
+- **Cross-document contradiction detection.** Partners want to compare what two
+  documents say about the same topic; a grounded system can surface *"the lease
+  says X but the purchase agreement says Y."*
+- **Calibrate confidence with the feedback loop.** We already log 👍/👎; tie it to
+  retrieval-quality metrics so the confidence thresholds are learned from real
+  outcomes rather than hand-tuned constants.
+
+### The bigger bet: a document data platform
+
+Today retrieval re-chunks every document on every question and ranks in-process.
+That's exactly right for a 50-user beta and exactly wrong for a firm with
+*dozens of documents per deal and thousands of deals*. The path there:
+
+1. **Move the heavy work to ingestion, not query time.** On upload, enqueue an
+   async job (Celery/RQ or serverless) that parses (with OCR for scanned
+   documents), chunks, and **embeds once**, writing chunks + vectors + metadata
+   to a store. The UI shows a `processing → ready` status. Queries then become a
+   fast indexed lookup instead of a full re-scan.
+2. **Introduce a vector index.** Start with **pgvector** — it's a Postgres
+   extension, so it's *no new infrastructure* and it keeps chunks and their
+   vectors next to the relational data. That carries you a long way. Only when
+   the corpus and query volume outgrow it do you reach for a dedicated vector
+   database (Pinecone / Weaviate / Milvus) or a managed index.
+3. **When the corpus is genuinely large, a lakehouse (e.g. Databricks).** At real
+   scale the *document store itself* becomes the interesting system, and this is
+   where a platform like Databricks earns its place:
+   - **Delta Lake** as the system of record for documents, chunks, and
+     embeddings — a versioned, queryable table you can reprocess (re-chunk,
+     re-embed with a better model) with a batch **Spark** job across the whole
+     corpus, not one PDF at a time.
+   - **Databricks Vector Search** as a managed ANN index kept in sync with those
+     Delta tables — so retrieval and the source-of-truth don't drift.
+   - **Unity Catalog** for governance, lineage, and **per-firm data isolation** —
+     which is not optional for legal data; you must be able to prove Firm A's
+     documents can never surface in Firm B's answers.
+   - **MLflow** to evaluate retrieval recall and citation precision on every
+     change and to version prompts/models, turning "the confidence badge feels
+     right" into a measured, regression-tested number.
+   - The same lakehouse absorbs the **product analytics** (the `usage_events`-style
+     data that drove this very decision), so retrieval quality and user behaviour
+     live in one place.
+
+   The honest caveat: Databricks is *overkill for the beta* and I wouldn't reach
+   for it now — pgvector in the existing Postgres is the right first move. The
+   lakehouse is the answer once you have large-scale batch ETL/OCR, cross-customer
+   analytics, an ML lifecycle to manage, and hard governance requirements — i.e.
+   when "a pile of PDFs on disk" has become "a data platform."
+
+The one-line version: **push chunk/embed to upload-time, make retrieval a hybrid
+indexed lookup (pgvector → a lakehouse-backed vector index at scale), and put
+tenancy, governance, and evaluation around it.**
 
 ---
 ---
