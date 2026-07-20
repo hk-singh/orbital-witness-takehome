@@ -10,7 +10,7 @@ architecture I'd build with more time are in **[`DECISIONS.md`](./DECISIONS.md)*
 
 ## 🎥 Loom walkthrough
 
-> _Loom link: **TODO — paste 2–3 min walkthrough here before submitting**_
+Video link - https://drive.google.com/file/d/1WzENzAX0p5edAr4jpR7vy6npdVyvTuxC/view?usp=sharing
 
 ## What's new in this submission
 
